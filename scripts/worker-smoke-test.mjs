@@ -1,5 +1,21 @@
 console.log("Script loaded");
 import { createClient } from "@supabase/supabase-js";
+import fs from "node:fs";
+import path from "node:path";
+
+// Support --env flag (e.g. node script.mjs --env .env.worker.local)
+const args = process.argv.slice(2);
+const envFlagIndex = args.indexOf("--env");
+if (envFlagIndex !== -1 && args[envFlagIndex + 1]) {
+    const envPath = args[envFlagIndex + 1];
+    const resolvedPath = path.resolve(process.cwd(), envPath);
+    console.log(`Loading env from: ${resolvedPath}`);
+    if (fs.existsSync(resolvedPath)) {
+        process.loadEnvFile(resolvedPath);
+    } else {
+        console.error(`Env file not found at: ${resolvedPath}`);
+    }
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -42,6 +58,7 @@ async function main() {
         .select()
         .single();
     if (createErr) throw createErr;
+    console.log("Created scan:", scan.id);
     console.log("Created job:", createdJob.id);
 
     // 1) claim a job
@@ -62,20 +79,35 @@ async function main() {
 
     const { error: expErr } = await supabase
         .from("exposures_current")
-        .insert({
+        .upsert({
             tenant_key: job.tenant_key,
             identity_key: dummyIdentity,
             risk_bucket: "RB1",
-            severity: "high",
+            proto: "tcp",
+            port: 443,
+            observed_host: "example.com",
+
+            // optional
+            observed_ip: null,
+            asset_id: null,
+            last_scan_id: job.scan_id ?? null,
+
+            // required by your schema
+            fingerprint: "dummy_fingerprint_123",
+            evidence: { note: "worker smoke test" },
+
+            // recommended explicit fields (keeps behavior deterministic)
+            identity_version: 1,
+            fingerprint_version: 1,
             status: "open",
+            severity: "high",
+            state: "open",
+            last_change_type: "new",
+
+            // time handling
             first_seen: new Date().toISOString(),
             last_seen: new Date().toISOString(),
-            evidence: { note: "worker smoke test" },
-            proto: "tcp",
-            port: 22,
-            observed_host: "example.com",
-            fingerprint: "dummy_fingerprint_123"
-        });
+        }, { onConflict: "tenant_key,identity_key" });
 
     if (expErr) throw expErr;
 

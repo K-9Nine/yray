@@ -1,4 +1,7 @@
 {
+  "workspaces": [
+    "apps/*"
+  ],
   "devDependencies": {
     "@supabase/supabase-js": "^2.95.0"
   }

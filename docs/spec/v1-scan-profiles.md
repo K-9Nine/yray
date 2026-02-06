@@ -107,3 +107,11 @@ Any change to:
 must update this doc and bump the doc’s “Last updated” date.
 
 ---
+
+## 7. Database Definitions
+
+### scan_jobs.status
+Values: `queued` | `claimed` | `running` | `completed` | `failed`
+
+### scan_jobs.scan_profile
+Values: `baseline` | `verify`

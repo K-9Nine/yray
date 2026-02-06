@@ -1,91 +1,89 @@
+import { notFound } from "next/navigation";
 import { getExposure } from "../actions";
 import { addExposureActionFromForm, listExposureActions } from "./actions";
-import { ExposureActionButton } from "./_components/ExposureActionButton";
-import { AddNoteForm } from "./_components/AddNoteForm";
 
-export default async function FindingDetailPage(props: { params: Promise<{ identity_key: string }> }) {
-    const { identity_key } = await props.params;
+export default async function ExposureDetailPage({ params }: { params: Promise<{ identity_key: string }> }) {
+    const { identity_key } = await params;
+    const key = decodeURIComponent(identity_key);
+    const exposure = await getExposure(key);
 
-    const exposure = await getExposure(identity_key);
-    const actions = await listExposureActions(identity_key);
+    if (!exposure) {
+        return (
+            <div className="p-6 space-y-2">
+                <h1 className="text-lg font-semibold">Exposure not available</h1>
+                <p className="text-sm text-muted-foreground">
+                    This exposure doesn’t exist, or it isn’t visible in the current organisation.
+                </p>
+                <p className="text-xs text-muted-foreground break-all">{key}</p>
+            </div>
+        );
+    }
+
+    const actions = await listExposureActions(key);
 
     return (
-        <main className="p-6 space-y-6">
-            <header className="space-y-1">
-                <h1 className="text-2xl font-semibold">Finding</h1>
-                <p className="text-sm text-muted-foreground font-mono break-all">{identity_key}</p>
-            </header>
-
-            <section className="rounded-xl border p-4 space-y-2">
-                <div className="text-sm">
-                    <div><span className="font-medium">Bucket:</span> {exposure.risk_bucket}</div>
-                    <div><span className="font-medium">Severity:</span> {exposure.severity}</div>
-                    <div><span className="font-medium">State:</span> {exposure.state}</div>
-                    <div><span className="font-medium">Host:</span> {exposure.observed_host ?? exposure.observed_ip ?? "-"}</div>
-                    <div><span className="font-medium">Port:</span> {exposure.port ?? "-"}</div>
-                    <div><span className="font-medium">Title:</span> {exposure.title ?? "-"}</div>
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-xl font-semibold">{exposure.fingerprint ?? exposure.identity_key}</h1>
+                <div className="text-sm text-muted-foreground">
+                    {exposure.risk_bucket} · {exposure.severity} · {exposure.observed_host} · {exposure.port}
                 </div>
-            </section>
+            </div>
 
-            <section className="rounded-xl border p-4 space-y-3">
-                <h2 className="font-medium">Actions</h2>
+            <div className="flex flex-wrap gap-2">
+                <form action={addExposureActionFromForm.bind(null, key)}>
+                    <input type="hidden" name="action_type" value="suppress" />
+                    <button type="submit" className="px-3 py-2 rounded border">Suppress</button>
+                </form>
 
-                <div className="flex gap-3 flex-wrap">
-                    <ExposureActionButton
-                        identityKey={identity_key}
-                        actionType="suppress"
-                        label="Suppress"
-                        action={addExposureActionFromForm}
-                    />
-                    <ExposureActionButton
-                        identityKey={identity_key}
-                        actionType="unsuppress"
-                        label="Unsuppress"
-                        action={addExposureActionFromForm}
-                    />
-                    <ExposureActionButton
-                        identityKey={identity_key}
-                        actionType="mark_in_progress"
-                        label="Mark in progress"
-                        action={addExposureActionFromForm}
-                    />
-                    <ExposureActionButton
-                        identityKey={identity_key}
-                        actionType="verify_fix"
-                        label="Request verify"
-                        action={addExposureActionFromForm}
-                    />
-                    <ExposureActionButton
-                        identityKey={identity_key}
-                        actionType="mark_false_positive"
-                        label="False positive"
-                        action={addExposureActionFromForm}
-                        variant="destructive"
-                    />
-                </div>
+                <form action={addExposureActionFromForm.bind(null, key)}>
+                    <input type="hidden" name="action_type" value="unsuppress" />
+                    <button type="submit" className="px-3 py-2 rounded border">Unsuppress</button>
+                </form>
 
-                <div className="pt-2 max-w-lg">
-                    <AddNoteForm identityKey={identity_key} action={addExposureActionFromForm} />
-                </div>
-            </section>
+                <form action={addExposureActionFromForm.bind(null, key)}>
+                    <input type="hidden" name="action_type" value="mark_in_progress" />
+                    <button type="submit" className="px-3 py-2 rounded border">Mark in progress</button>
+                </form>
 
-            <section className="rounded-xl border p-4">
-                <h2 className="font-medium mb-3">Recent actions</h2>
-                {actions.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No actions yet.</div>
-                ) : (
-                    <ul className="text-sm space-y-2">
-                        {actions.map((a: any) => (
-                            <li key={a.id} className="border rounded-md p-2">
-                                <div className="font-mono">{a.action_type}</div>
+                <form action={addExposureActionFromForm.bind(null, key)}>
+                    <input type="hidden" name="action_type" value="verify_fix" />
+                    <button type="submit" className="px-3 py-2 rounded border">Request verify</button>
+                </form>
+
+                <form action={addExposureActionFromForm.bind(null, key)}>
+                    <input type="hidden" name="action_type" value="mark_false_positive" />
+                    <button type="submit" className="px-3 py-2 rounded border">False positive</button>
+                </form>
+            </div>
+
+            <div className="space-y-2">
+                <h2 className="text-base font-semibold">Add note</h2>
+                <form action={addExposureActionFromForm.bind(null, key)} className="space-y-2">
+                    <input type="hidden" name="action_type" value="add_note" />
+                    <textarea name="note" className="w-full min-h-[90px] rounded border p-2" />
+                    <button type="submit" className="px-3 py-2 rounded border">Save note</button>
+                </form>
+            </div>
+
+            <div className="space-y-2">
+                <h2 className="text-base font-semibold">Activity</h2>
+                <div className="rounded border divide-y">
+                    {actions.length === 0 ? (
+                        <div className="p-3 text-sm text-muted-foreground">No actions yet.</div>
+                    ) : (
+                        actions.map((a) => (
+                            <div key={a.id} className="p-3 text-sm">
+                                <div className="font-medium">{a.action_type}</div>
                                 <div className="text-muted-foreground">
-                                    {new Date(a.created_at).toLocaleString()} {a.note ? `— ${a.note}` : ""}
+                                    {a.created_at} {a.actor_user_id ? `· ${a.actor_user_id}` : ""}
                                 </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </section>
-        </main>
+                                {a.note ? <div className="mt-1">{a.note}</div> : null}
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
     );
 }

@@ -15,8 +15,11 @@ export default async function FindingsPage() {
 
             <section className="rounded-xl border p-4">
                 {rows.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">
-                        No findings yet. Queue a scan, then run the worker.
+                    <div className="p-6 space-y-2">
+                        <h1 className="text-xl font-semibold">Findings</h1>
+                        <p className="text-sm text-muted-foreground">
+                            No findings yet. Run a scan to generate findings.
+                        </p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -24,26 +27,35 @@ export default async function FindingsPage() {
                             <thead className="text-left">
                                 <tr className="border-b">
                                     <th className="py-2 pr-4">Bucket</th>
-                                    <th className="py-2 pr-4">Title</th>
+                                    <th className="py-2 pr-4">Fingerprint</th>
                                     <th className="py-2 pr-4">Host</th>
                                     <th className="py-2 pr-4">Port</th>
                                     <th className="py-2 pr-4">Severity</th>
+                                    <th className="py-2 pr-4">State</th>
                                     <th className="py-2 pr-4">Last seen</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {rows.map(r => (
+                                {rows.map((r) => (
                                     <tr key={r.identity_key} className="border-b">
                                         <td className="py-2 pr-4">{r.risk_bucket}</td>
                                         <td className="py-2 pr-4">
-                                            <Link className="underline" href={`/findings/${encodeURIComponent(r.identity_key)}`}>
-                                                {r.title ?? r.identity_key.slice(0, 16) + "…"}
+                                            <Link
+                                                className="underline"
+                                                href={`/findings/${encodeURIComponent(r.identity_key)}`}
+                                            >
+                                                {r.fingerprint ?? r.identity_key}
                                             </Link>
                                         </td>
-                                        <td className="py-2 pr-4 font-mono">{r.observed_host ?? r.observed_ip ?? "-"}</td>
+                                        <td className="py-2 pr-4 font-mono">
+                                            {r.observed_host ?? "-"}
+                                        </td>
                                         <td className="py-2 pr-4">{r.port ?? "-"}</td>
                                         <td className="py-2 pr-4">{r.severity}</td>
-                                        <td className="py-2 pr-4">{new Date(r.last_seen_at).toLocaleString()}</td>
+                                        <td className="py-2 pr-4">{r.state}</td>
+                                        <td className="py-2 pr-4">
+                                            {r.last_seen ? new Date(r.last_seen).toLocaleString() : "-"}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
