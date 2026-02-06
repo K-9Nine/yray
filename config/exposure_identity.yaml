@@ -1,0 +1,198 @@
+# XRAY Watchtower — Exposure Identity Rules (machine-readable source of truth)
+# If this file conflicts with docs/contracts/exposure-identity.md, THIS FILE WINS.
+version: 1
+
+meta:
+  owner: "xray-watchtower"
+  last_updated: "2026-02-05"
+  notes:
+    - "Authoritative v1 identity_key inputs + RB1–RB7 fingerprint rules."
+    - "Used to generate docs/contracts/exposure-identity.md tables and to validate code mappings."
+
+identity_key:
+  identity_version: 1
+  fingerprint_version: 1
+
+  # Canonical identity string format (must match docs/contracts/exposure-identity.md)
+  format: "v{identity_version}|tenant:{tenant_id}|asset:{asset_id}|host:{observed_host}|bucket:{risk_bucket}|proto:{proto}|port:{port}|fpv:{fingerprint_version}|fp:{fingerprint}"
+
+  normalization:
+    separators:
+      field_sep: "|"
+      kv_sep: ":"
+    lower_case_fields:
+      - observed_host
+      - risk_bucket
+      - proto
+    trim_whitespace: true
+    utf8: true
+
+canonicalization:
+  host:
+    domain:
+      lowercase: true
+      strip_trailing_dot: true
+      idna: "none" # options: none|to_ascii|to_unicode (keep 'none' for v1 determinism)
+    ip:
+      lowercase: false
+
+  url:
+    scheme_lowercase: true
+    host_lowercase: true
+    remove_default_ports: true
+    strip_fragment: true
+    collapse_multiple_slashes: true
+    query_handling: "drop" # options: drop|sort|keep
+    path_trailing_slash: "keep" # options: keep|strip (v1 keep to avoid surprising identity flips)
+
+  headers:
+    header_name_lowercase: true
+    trim_values: true
+    compare_as_sorted_set: true
+
+  tls:
+    tls_versions_sort: true
+    sans_lowercase_and_sort: true
+    issuer_subject_lowercase: true
+    cert_anchor_preference:
+      - "certificate.spki_sha256"
+      - "certificate.cert_sha256"
+      - "certificate.serial"
+
+buckets:
+  RB1:
+    name: "Exposed Remote Admin"
+    proto: "tcp"
+    port_source: "observed_open_port"
+    fingerprint:
+      template: "svc:{service_family}"
+      service_family_from_port:
+        "22": "ssh"
+        "2222": "ssh"
+        "3389": "rdp"
+        "5900": "vnc"
+        "5901": "vnc"
+        "5985": "winrm"
+        "5986": "winrm"
+      # Optional enrichment (v1 off by default; keep out of fingerprint unless enabled explicitly)
+      optional_fingerprint_suffixes: []
+    material_change_fields:
+      # v1 baseline: minimal. Add banner/product/version only if you later decide it is stable.
+      - "port"
+      - "service_family"
+
+  RB2:
+    name: "Exposed Web Panels"
+    proto: "http_or_https"
+    port_source: "from_observation"
+    fingerprint:
+      template: "tpl:{template_id}|url:{canonical_url}"
+      required_fields:
+        - "nuclei.template_id"
+        - "http.url_or_nuclei.matched_at"
+      url_canonicalization: "canonical_url_full" # includes path, drops query
+    material_change_fields:
+      - "nuclei.template_id"
+      - "canonical_url"
+
+  RB3:
+    name: "Weak Encryption"
+    proto: "tls"
+    port_source: "observed_open_port"
+    # One exposure per posture category to avoid churn from full cipher lists
+    fingerprint:
+      strategy: "category_per_exposure"
+      categories:
+        - id: "old_versions"
+          template: "tls:old_versions"
+          trigger:
+            any_tls_version_in: ["TLS1.0", "TLS1.1"]
+        - id: "weak_ciphers"
+          template: "tls:weak_ciphers"
+          trigger:
+            weak_cipher_class: true
+      optional_split_by_version: false
+    material_change_fields:
+      - "tls_versions_set"
+      - "weak_cipher_class_toggle"
+
+  RB4:
+    name: "Certificate Issues"
+    proto: "tls"
+    port_source: "observed_open_port"
+    fingerprint:
+      template: "issue:{issue_type}|cert:{cert_anchor}"
+      issue_types:
+        - "expired"
+        - "near_expiry"
+        - "hostname_mismatch"
+        - "self_signed"
+        - "untrusted_chain"
+      cert_anchor_from: "tls.certificate" # uses tls.cert_anchor_preference above
+    material_change_fields:
+      - "issue_type"
+      - "cert_anchor"
+      - "expiry_threshold_crossed"
+
+  RB5:
+    name: "Risky HTTP Security Headers"
+    proto: "http_or_https"
+    port_source: "from_observation"
+    fingerprint:
+      template: "missing:{missing_headers}|url:{canonical_url_root}"
+      missing_headers_sorted_csv: true
+      url_root_strategy: "scheme_host_port_root" # identity tied to root to reduce path churn
+    material_change_fields:
+      - "missing_headers_set"
+
+  RB6:
+    name: "Unresponsive / Unknown Edge Service"
+    proto: "tcp"
+    port_source: "observed_open_port"
+    fingerprint:
+      template: "symptom:{symptom}"
+      allowed_symptoms:
+        - "tcp_open_no_banner"
+        - "http_timeout"
+        - "tls_handshake_fail"
+        - "protocol_mismatch"
+    material_change_fields:
+      - "symptom"
+
+  RB7:
+    name: "DNS Email Spoofing Risk"
+    proto: "dns"
+    port_source: "none"
+    port_value: 0
+    fingerprint:
+      strategy: "record_per_exposure"
+      records:
+        spf:
+          template: "record:spf"
+        dmarc:
+          template: "record:dmarc"
+        dkim:
+          template: "record:dkim|sel:{selector}"
+          selector_strategy: "best_effort" # only include selector when confidently validated
+    material_change_fields:
+      - "dmarc_policy"
+      - "spf_all_mechanism"
+      - "dkim_selector_presence"
+
+material_change_policy:
+  # If a field outside material_change_fields changes, do NOT emit CHANGED.
+  # Update last_seen/evidence silently to avoid noise.
+  default_behavior: "ignore_non_material"
+  update_last_seen_on_any_observation: true
+
+collision_guidance:
+  avoid_unstable_fields_in_fingerprint:
+    - "response_time_ms"
+    - "dynamic_page_text"
+    - "full_cipher_list"
+    - "timestamps"
+  prefer_categorical_signals:
+    - "issue_type"
+    - "missing_headers_set"
+    - "template_id"
+    - "tls_old_versions_set"

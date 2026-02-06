@@ -1,0 +1,5 @@
+# XRAY Watchtower Requirements
+
+# Dev / Tooling
+PyYAML==6.0.2  # For scripts/sync_scan_profiles_doc.py
+pytest>=7.0.0

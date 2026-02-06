@@ -1,0 +1,218 @@
+# XRAY Watchtower — Scan Profiles (machine-readable source of truth)
+# Ports, timeouts, limits, and concurrency for v1.
+# If this file conflicts with docs, THIS FILE WINS.
+version: 1
+
+meta:
+  owner: "xray-watchtower"
+  last_updated: "2026-02-05"
+  notes:
+    - "Authoritative v1 scan ports/timeouts/limits."
+    - "Worker and API must derive runtime config from this YAML (or generated code)."
+
+safety:
+  authorized_targets_only: true
+  no_bruteforce: true
+  no_destructive_checks: true
+  max_redirects: 5
+  max_http_response_bytes: 262144 # 256KB
+  retries:
+    network_timeouts: 1
+
+caps:
+  # Prevent runaway scans for solo operation
+  max_endpoints_per_asset:
+    domain: 20       # max A/AAAA combined
+    cidr: 256        # max IPs per CIDR asset per scan
+    ip: 1
+  max_total_endpoints_per_scan: 2000
+  max_total_runtime_seconds: 900          # 15 minutes per scan
+  max_runtime_seconds_per_endpoint: 180   # 3 minutes per endpoint
+
+concurrency:
+  # Conservative defaults for a single VM
+  per_host_concurrency_cap: 4
+  httpx_concurrency: 50
+  tlsx_concurrency: 50
+  nuclei_concurrency: 25
+  nuclei_rate_limit_rps: 50
+  naabu_rate_pps: 500
+
+tools:
+  dns:
+    timeout_seconds: 2
+    retries: 1
+    total_budget_seconds_per_domain: 8
+
+  naabu:
+    connect_timeout_ms: 800
+    retries: 1
+    host_timeout_seconds: 60
+
+  httpx:
+    timeout_seconds: 8
+    retries: 1
+    max_redirects: 5
+    max_response_bytes: 262144
+    user_agent: "XRAY-Watchtower/1.0"
+
+  tlsx:
+    timeout_seconds: 6
+    retries: 1
+
+  nuclei:
+    timeout_seconds: 10
+    retries: 1
+    template_policy:
+      safe_only: true
+      sets:
+        rb2_panels: true
+        rb5_headers: true
+        rb3_tls: true
+        rb4_cert: true
+      disallowed_categories:
+        - bruteforce
+        - dos
+        - fuzzing
+        - intrusive
+
+  nmap:
+    enabled_by_default: false
+    allowed_use_cases:
+      - "RB1 confirmation (rare)"
+      - "RB6 triage (rare)"
+      - "verify scan when stronger service evidence required (rare)"
+    host_timeout_seconds: 120
+    max_retries: 1
+    timing_template: "T3"
+
+ports:
+  # v1 baseline allowlist (authoritative)
+  # Goal: cover RB1 + common web/admin ports while staying predictable.
+  v1_baseline_tcp_allowlist:
+    # RB1 remote admin (default set)
+    - 22
+    - 2222
+    - 3389
+    - 5900
+    - 5901
+    - 5985
+    - 5986
+
+    # Web/HTTP(S) common
+    - 80
+    - 443
+    - 8000
+    - 8008
+    - 8080
+    - 8081
+    - 8088
+    - 8181
+    - 8443
+    - 8888
+    - 9000
+    - 9001
+    - 9090
+    - 9443
+    - 10443
+
+    # Common admin/panel ports
+    - 2082
+    - 2083
+    - 2086
+    - 2087
+    - 2095
+    - 2096
+    - 3000
+    - 5000
+    - 5601
+    - 8086
+    - 8089
+    - 9200
+    - 10000
+    - 15672
+
+  # Ports to attempt HTTP probes on when discovered open
+  v1_http_candidate_ports:
+    - 80
+    - 8000
+    - 8008
+    - 8080
+    - 8081
+    - 8088
+    - 8181
+    - 8888
+    - 9000
+    - 9001
+    - 9090
+    - 9200
+    - 10000
+    - 15672
+    - 2082
+    - 2086
+    - 2095
+    - 3000
+    - 5000
+    - 5601
+    - 8086
+    - 8089
+
+  # Ports to attempt HTTPS probes on when discovered open
+  v1_https_candidate_ports:
+    - 443
+    - 8443
+    - 9443
+    - 10443
+    - 2083
+    - 2087
+    - 2096
+
+  # Ports to attempt TLS posture/cert inspection on
+  v1_tls_candidate_ports:
+    - 443
+    - 8443
+    - 9443
+    - 10443
+    - 2083
+    - 2087
+    - 2096
+
+profiles:
+  v1_baseline:
+    description: "Daily/on-demand baseline scan (deterministic allowlist)"
+    scan_kind_allowed:
+      - scheduled
+      - on_demand
+    tcp_ports_allowlist_ref: "ports.v1_baseline_tcp_allowlist"
+    http_candidate_ports_ref: "ports.v1_http_candidate_ports"
+    https_candidate_ports_ref: "ports.v1_https_candidate_ports"
+    tls_candidate_ports_ref: "ports.v1_tls_candidate_ports"
+    dns_email_checks_enabled: true
+
+  v1_verify:
+    description: "Verify-fix scan (minimal, targeted to a specific exposure)"
+    scan_kind_allowed:
+      - verify
+    strategy: "single_exposure"
+    rules:
+      rb1:
+        tools: ["naabu"]
+        ports: "use_exposure_port"
+      rb2:
+        tools: ["httpx", "nuclei"]
+        ports: "derive_from_exposure_url"
+      rb3:
+        tools: ["tlsx"]
+        ports: "use_exposure_port"
+      rb4:
+        tools: ["tlsx"]
+        ports: "use_exposure_port"
+      rb5:
+        tools: ["httpx"]
+        ports: "derive_from_exposure_url_root"
+      rb6:
+        tools: ["naabu"]
+        ports: "use_exposure_port"
+      rb7:
+        tools: ["dns"]
+        ports: "none"

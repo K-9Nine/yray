@@ -1,0 +1,28 @@
+#!/usr/bin/env powershell
+#requires -Version 5.1
+$ErrorActionPreference = "Stop"
+
+Write-Host "Running docs drift check..."
+python scripts/sync_scan_profiles_doc.py
+python scripts/sync_exposure_identity_doc.py
+
+# Fail if sync produced changes
+git diff --exit-code | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ""
+  Write-Host "❌ Docs drift detected: sync scripts changed tracked files."
+  Write-Host "   Stage the updated docs and retry commit:"
+  Write-Host "     git add docs/spec/v1-scan-profiles.md docs/contracts/exposure-identity.md"
+  Write-Host ""
+  exit 1
+}
+
+Write-Host "Running tests..."
+# Running tests directly as scripts because pytest has environment issues
+python tests/test_docs_scan_profiles_in_sync.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+python tests/test_docs_exposure_identity_in_sync.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "✅ Pre-commit checks passed."
